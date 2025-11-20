@@ -92,7 +92,7 @@ class CustomLoss(nn.Module):
         # B_expanded = torch.unsqueeze(self.forbiddens, 0)
         # C = A_expanded - B_expanded
         # # C1 = self.custom_activation(C)
-        # processedTime = torch.relu(((torch.squeeze(time) + 1)/self.timesteps)-0.6)*1
+        # processedTime = torch.relu(((torch.squeeze(time) + 1))-0.6)*1
         # # processedTime = torch.squeeze(time)
         # processedTime = processedTime*processedTime
         # # penaltyPred = processedTime * (torch.mean(C1, dim=(1, 2, 3), keepdim=False))
@@ -122,8 +122,10 @@ class CustomLoss(nn.Module):
         # #return torch.mean(torch.pow(mae_loss,2)) + torch.mean(mae_loss) + 0.001 * torch.sum(penalty)
         # #return torch.mean(torch.pow(mae_loss,2)) + 0.0 * torch.mean(penalty)
         # # return torch.mean(mae_loss) + 0.01 * torch.mean(penalty)
-        # return torch.mean(mae_loss) + torch.mean(torch.abs(penaltyTrue-penaltyPred))
+        # return torch.mean(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(time)) + torch.mean(torch.abs(penaltyTrue-penaltyPred))
+        # # return torch.mean(mae_loss) + torch.mean(torch.abs(penaltyTrue-penaltyPred))
         # # return torch.mean(mae_loss)
+
         return torch.sum(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(torch.pow(time+0.00001,1.0)))
 
 # # Custom Activation Layer
@@ -169,9 +171,9 @@ class PairwiseSubtractionLayer(nn.Module):
 
         finIndex = torch.argmin(torch.max(torch.abs(C), dim=2, keepdim=True).values, dim=3)
 
-        finIndex2 = finIndex.repeat(repeats=(1, 1, 2))
+        finIndex = finIndex.repeat(repeats=(1, 1, 2))
 
-        valsMin = torch.gather(C, dim=3, index=finIndex2.unsqueeze(dim=3))
+        valsMin = torch.gather(C, dim=3, index=finIndex.unsqueeze(dim=3))
 
         # finFin = self.custom_activation(valsMin.squeeze())
         finFin = valsMin.squeeze()
@@ -262,8 +264,8 @@ class SimpleNN(nn.Module):
 
         # self.denseAfterCat3 = nn.Linear(self.size * 3, self.size)
 
-        self.denseAfterCat4Traj = nn.Linear(self.temporalFeatureSize * 4, self.size)
-        self.denseAfterCat4Forb = nn.Linear(self.temporalFeatureSize * 4, self.size)
+        self.denseAfterCat4Traj = nn.Linear(self.temporalFeatureSize * 5, self.size)
+        self.denseAfterCat4Forb = nn.Linear(self.temporalFeatureSize * 5, self.size)
         # self.denseAfterCat4Traj = nn.Linear(8, self.size)
         # self.denseAfterCat4Forb = nn.Linear(8, self.size)
         self.denseAfterCat5 = nn.Linear(self.size * 5, self.size)
@@ -273,8 +275,8 @@ class SimpleNN(nn.Module):
         # self.convLast = nn.Conv1d(128, 2, 1)
 
     def forward(self, traj, time, condLat, condLon):
-        plsPath = self.psl(traj).detach()
-        plsPathSum = self.pslSum(traj).detach()
+        plsPath = self.psl(traj)
+        plsPathSum = self.pslSum(traj)
 
         # plsPathUnsqueeze = torch.unsqueeze(plsPath, 1)
         # timeUnsqueeze = torch.unsqueeze(time, 1)
@@ -302,7 +304,7 @@ class SimpleNN(nn.Module):
         trajPathDirect = self.trajInputDirect(traj)
         mixedTimeCond = torch.cat((time, condLat, condLon), 1)
         timePath = self.timeInput(mixedTimeCond)
-        timePath2 = torch.reshape(timePath, (-1, self.maxLengthSize, self.size))
+        timePath = torch.reshape(timePath, (-1, self.maxLengthSize, self.size))
         # mergePathRoot = self.mult1(trajPath, timePath)
 
         convedTrajs = self.ConvDirect(mixedTrajCond)
@@ -311,25 +313,25 @@ class SimpleNN(nn.Module):
         mergePathTraj = self.denseAfterCat4Traj(convedTrajs)
         mergePathForb = self.denseAfterCat4Forb(convedDists)
 
-        allInfo = torch.cat((mergePathTraj,mergePathForb,timePath2),dim=2)
+        allInfo = torch.cat((mergePathTraj,mergePathForb,timePath),dim=2)
         # mergePath3Total = self.mult1(mergePath3Total, timePath)
         allInfoDrnsed = self.allInfoDense(allInfo)
         # allInfoDrnsed = self.activationFinal(allInfoDrnsed)
 
         # finalPath = self.lastAdd(timePath, mergePath3Total, trajPathDirect)
-        finalPath = torch.cat((timePath2, allInfoDrnsed, trajPathDirect,mergePathTraj,mergePathForb), 2)
-        finalPath2 = self.denseAfterCat5(finalPath)
+        finalPath = torch.cat((timePath, allInfoDrnsed, trajPathDirect,mergePathTraj,mergePathForb), 2)
+        finalPath = self.denseAfterCat5(finalPath)
         # finalPath = self.activationFinal(finalPath)
 
-        finalPathC = torch.cat((finalPath2, plsPathDRS), 2)
-        finalPathC2 = self.lastDense(finalPathC)
+        finalPathC = torch.cat((finalPath, plsPathDRS), 2)
+        finalPathC = self.lastDense(finalPathC)
         # finalPathC = self.activationFinal(finalPathC)
 
         # finalPathC = finalPathC.permute(0, 2, 1)
         # finalPathC = self.convLast(finalPathC)
         # finalPathC = finalPathC.permute(0, 2, 1)
-        finalPathC3 = self.lastDenseAlt(finalPathC2)
-        return finalPathC3
+        finalPathC = self.lastDenseAlt(finalPathC)
+        return finalPathC
 
 def generate_ts(timesteps, num, learningScheduleTime, isChangeWeights, isAdvancedWeighting=True):
     orig = np.random.randint(0, timesteps, size=num)
@@ -341,7 +343,7 @@ def generate_ts(timesteps, num, learningScheduleTime, isChangeWeights, isAdvance
     #     actualLearningScheduleTime=0
     # if isChangeWeights==False:
     #     actualLearningScheduleTime=1
-    # numInternal = 100
+    # numInternal=100
     # noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.8)),
     #                               size=(int)(numInternal / (0.9 + actualLearningScheduleTime * 10.0)))
     # lastOnes = np.random.randint((int)(math.floor(timesteps * 0.65)), timesteps,
@@ -359,20 +361,19 @@ def generate_ts(timesteps, num, learningScheduleTime, isChangeWeights, isAdvance
     # #                               size=(int)(num / (0.11)))
     #
     # finalTs = np.concat((orig,noisyOnes,lastOnes,lastOnes2,lastOnes3))
-    # finalTs = np.random.choice(finalTs,num)
-    # return finalTs
-    # # return np.arange(0,timesteps,1,dtype=int)
-    # # return np.random.randint(timesteps-1, timesteps, size=num)
-    # # return np.random.randint(timesteps-3, timesteps, size=num)
     #
     # # noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
     # #                               size=(int)(num / (1)))
     # # orig = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
-    # #                          size=(int)(num / (1)))
+    # #                               size=(int)(num / (1)))
     # # finalTs = np.concat((orig, noisyOnes))
-    # #
-    # # finalTs = np.random.choice(finalTs, num)
-    # # return finalTs
+    #
+    #
+    # finalTs = np.random.choice(finalTs,num)
+    # return finalTs
+    # # # return np.arange(0,timesteps,1,dtype=int)
+    # # # return np.random.randint(timesteps-1, timesteps, size=num)
+    # # # return np.random.randint(timesteps-3, timesteps, size=num)
 
 def forward_noise_notNormalized(meanVals, varVals, timesteps, x, t, learningScheduleTime, isChangeWeights, isVizualize=True, isAdvancedWeighting=True):
     global oneTimeVisGenAB
@@ -397,11 +398,11 @@ def forward_noise_notNormalized(meanVals, varVals, timesteps, x, t, learningSche
     if isAdvancedWeighting == True:
         if isChangeWeights == False:
             learningScheduleTime = 1
-        img_a = x * (1 - np.pow(a, 1.5 + learningScheduleTime * 4.0)) + noise * np.pow(a, 1.5 + learningScheduleTime * 4.0)
-        img_b = x * (1 - np.pow(b, 1.5 + learningScheduleTime * 4.0)) + noise * np.pow(b, 1.5 + learningScheduleTime * 4.0)
+        img_a = x * (1 - np.pow(a, 2 + learningScheduleTime * 6.0)) + noise * np.pow(a, 2 + learningScheduleTime * 6.0)
+        img_b = x * (1 - np.pow(b, 2 + learningScheduleTime * 6.0)) + noise * np.pow(b, 2 + learningScheduleTime * 6.0)
     else:
-        img_a = x * (1 - np.pow(a, 4.5)) + noise * np.pow(a, 4.5)
-        img_b = x * (1 - np.pow(b, 4.5)) + noise * np.pow(b, 4.5)
+        img_a = x * (1 - np.pow(a, 7)) + noise * np.pow(a, 7)
+        img_b = x * (1 - np.pow(b, 7)) + noise * np.pow(b, 7)
 
 
     # img_a = x + noise * np.pow(a,2)
@@ -431,14 +432,14 @@ def forward_noise_notNormalized(meanVals, varVals, timesteps, x, t, learningSche
             cmap = cm.get_cmap(cmap_name, timesteps)
             for idx in range(x.shape[0]):
                 color = cmap(t[idx])
-                for h in range(1, x.shape[1]):
+                for h in range(1, img_b.shape[1]):
                     plt.plot([img_b[idx, h - 1, 0], img_b[idx, h, 0]], [img_b[idx, h - 1, 1], img_b[idx, h, 1]],
                              marker='',
                              zorder=2, alpha=0.5, color=color)
             plt.show()
             for idx in range(x.shape[0]):
                 color = cmap(t[idx])
-                for h in range(1, x.shape[1]):
+                for h in range(1, img_a.shape[1]):
                     plt.plot([img_a[idx, h - 1, 0], img_a[idx, h, 0]], [img_a[idx, h - 1, 1], img_a[idx, h, 1]],
                              marker='',
                              zorder=2, alpha=0.5, color=color)
@@ -498,70 +499,7 @@ class ConvLayers(nn.Module):
         self.convOffset=convOffset
         self.maxLengthSize=maxLengthSize
         self.featureSize=featureSize
-        self.lenOffest=lenOffest
-
-        # self.inputProcess = nn.Linear(self.featureSize, 64)
-
-        self.TCN1 = TCN(maxLengthSize, size, lenOffest, featureSize, convOffset, dilation=1)
-        self.TCN2 = TCN(maxLengthSize, size, lenOffest, featureSize, convOffset, dilation=2)
-        self.TCN3 = TCN(maxLengthSize, size, lenOffest, featureSize, convOffset, dilation=3)
-        # self.TCN4 = TCN(maxLengthSize, size, lenOffest, featureSize, convOffset, dilation=4)
-
-        self.activationFinal = nn.Tanh()
-
-        # self.lastDenseInPathAdjustTCN = nn.Linear(self.size, maxLengthSize)
-        # self.lastDenseInPathAdjustUNET = nn.Linear(64, maxLengthSize)
-        # self.lastDenseInPath = nn.Linear(self.maxLengthSize, self.featureSize)
-
-        self.lastDenseInPathAdjustUNET1 = nn.Linear(64, maxLengthSize)
-        self.lastDenseInPathUNET1 = nn.Linear(self.maxLengthSize, self.featureSize)
-
-        self.lastDenseInPathAdjustUNET2 = nn.Linear(64, maxLengthSize)
-        self.lastDenseInPathUNET2 = nn.Linear(self.maxLengthSize, self.featureSize)
-
-        self.lastDenseInPathAdjustUNET3 = nn.Linear(64, maxLengthSize)
-        self.lastDenseInPathUNET3 = nn.Linear(self.maxLengthSize, self.featureSize)
-
-        self.lastDenseInPathAdjustUNET4 = nn.Linear(64, maxLengthSize)
-        self.lastDenseInPathUNET4 = nn.Linear(self.maxLengthSize, self.featureSize)
-
-    def forward(self,input):
-        # inputFixed = self.inputProcess(input)
-
-        TCN1 = self.TCN1(input)
-        TCN2 = self.TCN2(input)
-        TCN3 = self.TCN3(input)
-        # TCN4 = self.TCN4(input)
-        # TCN4 = self.TCN1(inputFixed)
-
-        mergePath1 = self.lastDenseInPathAdjustUNET1(TCN1)
-        mergePath2 = self.lastDenseInPathAdjustUNET2(TCN2)
-        mergePath3 = self.lastDenseInPathAdjustUNET3(TCN3)
-        # mergePath4 = self.lastDenseInPathAdjustUNET4(TCN4)
-        # xd42N = self.lastDenseInPathAdjustUNET(xd42)
-
-        # mergePath1 = torch.reshape(mergePath1, (input.shape[0], self.maxLengthSize, -1))
-        # mergePath2 = torch.reshape(mergePath2, (input.shape[0], self.maxLengthSize, -1))
-        # mergePath3 = torch.reshape(mergePath3, (input.shape[0], self.maxLengthSize, -1))
-        # xd42 = torch.reshape(xd42, (input.shape[0], self.maxLengthSize, -1))
-
-        mergePath1N = self.lastDenseInPathUNET1(mergePath1)
-        mergePath2N = self.lastDenseInPathUNET2(mergePath2)
-        mergePath3N = self.lastDenseInPathUNET3(mergePath3)
-        # mergePath4N = self.lastDenseInPathUNET4(mergePath4)
-        # xd42NN = self.lastDenseInPathUNET(xd42N)
-
-        mergePath3Total = torch.cat((mergePath1N, mergePath2N, mergePath3N, input[:,self.lenOffest:,:]), 2)
-
-        return mergePath3Total
-
-class TCN(nn.Module):
-    def __init__(self, maxLengthSize,size,lenOffest,featureSize, convOffset=0, dilation=1):
-        super(TCN, self).__init__()
-        self.size = size
-        self.convOffset = convOffset
-        self.maxLengthSize = maxLengthSize
-        self.featureSize = featureSize
+        self.lenOffest = lenOffest
 
         self.activation1 = nn.PReLU()
         self.activation2 = nn.PReLU()
@@ -583,49 +521,118 @@ class TCN(nn.Module):
         self.activation17 = nn.PReLU()
         self.activation18 = nn.PReLU()
 
-        self.inputProcess = nn.Linear(self.featureSize, 64)
 
-        self.e11 = nn.Conv1d(maxLengthSize + lenOffest, 64, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 570x570x64
-        self.e12 = nn.Conv1d(64, 64, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 568x568x64
+        self.activation1_1 = nn.PReLU()
+        self.activation1_2 = nn.PReLU()
+        self.activation1_3 = nn.PReLU()
+        self.activation1_4 = nn.PReLU()
+        self.activation1_5 = nn.PReLU()
+        self.activation1_6 = nn.PReLU()
+        self.activation1_7 = nn.PReLU()
+        self.activation1_8 = nn.PReLU()
+
+        self.activation2_1 = nn.PReLU()
+        self.activation2_2 = nn.PReLU()
+        self.activation2_3 = nn.PReLU()
+        self.activation2_4 = nn.PReLU()
+        self.activation2_5 = nn.PReLU()
+        self.activation2_6 = nn.PReLU()
+        self.activation2_7 = nn.PReLU()
+        self.activation2_8 = nn.PReLU()
+
+        self.activation3_1 = nn.PReLU()
+        self.activation3_2 = nn.PReLU()
+        self.activation3_3 = nn.PReLU()
+        self.activation3_4 = nn.PReLU()
+        self.activation3_5 = nn.PReLU()
+        self.activation3_6 = nn.PReLU()
+        self.activation3_7 = nn.PReLU()
+        self.activation3_8 = nn.PReLU()
+
+
+        self.activationFinal = nn.Tanh()
+        self.conv1d1 = nn.Conv1d(maxLengthSize + lenOffest, self.size, 17 + convOffset, padding=(int)(8 + convOffset / 2))
+        self.conv2d1 = nn.Conv1d(self.size, self.size, 15 + convOffset, padding=(int)(7 + convOffset / 2))
+        self.conv3d1 = nn.Conv1d(self.size, self.size, 13 + convOffset, padding=(int)(6 + convOffset / 2))
+        self.conv4d1 = nn.Conv1d(self.size, self.size, 11 + convOffset, padding=(int)(5 + convOffset / 2))
+        self.conv5d1 = nn.Conv1d(self.size, self.size, 9 + convOffset, padding=(int)(4 + convOffset / 2))
+        self.conv6d1 = nn.Conv1d(self.size, self.size, 7 + convOffset, padding=(int)(3 + convOffset / 2))
+        self.conv7d1 = nn.Conv1d(self.size, self.size, 5 + convOffset, padding=(int)(2 + convOffset / 2))
+        self.conv8d1 = nn.Conv1d(self.size, self.maxLengthSize, 3 + convOffset, padding=(int)(1 + convOffset / 2))
+
+        # self.auxDense = nn.Linear(510, 512)
+
+        self.conv1d2 = nn.Conv1d(maxLengthSize +lenOffest, self.size, 17+convOffset, padding=(int)((8+convOffset/2)*2), dilation=2)
+        self.conv2d2 = nn.Conv1d(self.size, self.size, 15+convOffset, padding=(int)((7+convOffset/2)*2), dilation=2)
+        self.conv3d2 = nn.Conv1d(self.size, self.size, 13+convOffset, padding=(int)((6+convOffset/2)*2), dilation=2)
+        self.conv4d2 = nn.Conv1d(self.size, self.size, 11 + convOffset, padding=(int)((5 + convOffset / 2)*2), dilation=2)
+        self.conv5d2 = nn.Conv1d(self.size, self.size, 9 + convOffset, padding=(int)((4 + convOffset / 2)*2), dilation=2)
+        self.conv6d2 = nn.Conv1d(self.size, self.size, 7 + convOffset, padding=(int)((3 + convOffset / 2)*2), dilation=2)
+        self.conv7d2 = nn.Conv1d(self.size, self.size, 5 + convOffset, padding=(int)((2 + convOffset / 2)*2), dilation=2)
+        self.conv8d2 = nn.Conv1d(self.size, self.maxLengthSize, 3 + convOffset, padding=(int)((1 + convOffset / 2)*2), dilation=2)
+
+
+
+        self.conv1d3 = nn.Conv1d(maxLengthSize +lenOffest, self.size, 17+convOffset, padding=(int)((8+convOffset/2)*3), dilation=3)
+        self.conv2d3 = nn.Conv1d(self.size, self.size, 15+convOffset, padding=(int)((7+convOffset/2)*3), dilation=3)
+        self.conv3d3 = nn.Conv1d(self.size, self.size, 13+convOffset, padding=(int)((6+convOffset/2)*3), dilation=3)
+        self.conv4d3 = nn.Conv1d(self.size, self.size, 11 + convOffset, padding=(int)((5 + convOffset / 2)*3), dilation=3)
+        self.conv5d3 = nn.Conv1d(self.size, self.size, 9 + convOffset, padding=(int)((4 + convOffset / 2)*3), dilation=3)
+        self.conv6d3 = nn.Conv1d(self.size, self.size, 7 + convOffset, padding=(int)((3 + convOffset / 2)*3), dilation=3)
+        self.conv7d3 = nn.Conv1d(self.size, self.size, 5 + convOffset, padding=(int)((2 + convOffset / 2)*3), dilation=3)
+        self.conv8d3 = nn.Conv1d(self.size, self.maxLengthSize, 3 + convOffset, padding=(int)((1 + convOffset / 2)*3), dilation=3)
+
+
+        self.inputProcess = nn.Linear(self.featureSize,64)
+
+        self.e11 = nn.Conv1d(maxLengthSize +lenOffest, 64, kernel_size=3, padding=1)  # output: 570x570x64
+        self.e12 = nn.Conv1d(64, 64, kernel_size=3, padding=1)  # output: 568x568x64
         self.pool1 = nn.MaxPool1d(kernel_size=2, stride=2)  # output: 284x284x64
 
         # input: 284x284x64
-        self.e21 = nn.Conv1d(64, 128, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 282x282x128
-        self.e22 = nn.Conv1d(128, 128, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 280x280x128
+        self.e21 = nn.Conv1d(64, 128, kernel_size=3, padding=1)  # output: 282x282x128
+        self.e22 = nn.Conv1d(128, 128, kernel_size=3, padding=1)  # output: 280x280x128
         self.pool2 = nn.MaxPool1d(kernel_size=2, stride=2)  # output: 140x140x128
 
         # input: 140x140x128
-        self.e31 = nn.Conv1d(128, 256, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 138x138x256
-        self.e32 = nn.Conv1d(256, 256, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 136x136x256
+        self.e31 = nn.Conv1d(128, 256, kernel_size=3, padding=1)  # output: 138x138x256
+        self.e32 = nn.Conv1d(256, 256, kernel_size=3, padding=1)  # output: 136x136x256
         self.pool3 = nn.MaxPool1d(kernel_size=2, stride=2)  # output: 68x68x256
 
         # input: 68x68x256
-        self.e41 = nn.Conv1d(256, 512, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 66x66x512
-        self.e42 = nn.Conv1d(512, 512, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 64x64x512
+        self.e41 = nn.Conv1d(256, 512, kernel_size=3, padding=1)  # output: 66x66x512
+        self.e42 = nn.Conv1d(512, 512, kernel_size=3, padding=1)  # output: 64x64x512
         self.pool4 = nn.MaxPool1d(kernel_size=2, stride=2)  # output: 32x32x512
 
         # input: 32x32x512
-        self.e51 = nn.Conv1d(512, 1024, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 30x30x1024
-        self.e52 = nn.Conv1d(1024, 1024, kernel_size=5, padding=2*dilation, dilation=dilation)  # output: 28x28x1024
+        self.e51 = nn.Conv1d(512, 1024, kernel_size=3, padding=1)  # output: 30x30x1024
+        self.e52 = nn.Conv1d(1024, 1024, kernel_size=3, padding=1)  # output: 28x28x1024
 
         # Decoder
         self.upconv1 = nn.ConvTranspose1d(1024, 512, kernel_size=2, stride=2)
-        self.d11 = nn.Conv1d(1024, 512, kernel_size=5, padding=2*dilation, dilation=dilation)
-        self.d12 = nn.Conv1d(512, 512, kernel_size=5, padding=2*dilation, dilation=dilation)
+        self.d11 = nn.Conv1d(1024, 512, kernel_size=3, padding=1)
+        self.d12 = nn.Conv1d(512, 512, kernel_size=3, padding=1)
 
         self.upconv2 = nn.ConvTranspose1d(512, 256, kernel_size=2, stride=2)
-        self.d21 = nn.Conv1d(512, 256, kernel_size=5, padding=2*dilation, dilation=dilation)
-        self.d22 = nn.Conv1d(256, 256, kernel_size=5, padding=2*dilation, dilation=dilation)
+        self.d21 = nn.Conv1d(512, 256, kernel_size=3, padding=1)
+        self.d22 = nn.Conv1d(256, 256, kernel_size=3, padding=1)
 
         self.upconv3 = nn.ConvTranspose1d(256, 128, kernel_size=2, stride=2)
-        self.d31 = nn.Conv1d(256, 128, kernel_size=5, padding=2*dilation, dilation=dilation)
-        self.d32 = nn.Conv1d(128, 128, kernel_size=5, padding=2*dilation, dilation=dilation)
+        self.d31 = nn.Conv1d(256, 128, kernel_size=3, padding=1)
+        self.d32 = nn.Conv1d(128, 128, kernel_size=3, padding=1)
 
         self.upconv4 = nn.ConvTranspose1d(128, 64, kernel_size=2, stride=2)
-        self.d41 = nn.Conv1d(128, 64, kernel_size=5, padding=2*dilation, dilation=dilation)
-        # self.d42 = nn.Conv1d(64, self.maxLengthSize, kernel_size=3, padding=1)
-        self.d42 = nn.Conv1d(64, self.maxLengthSize, kernel_size=5, padding=2*dilation, dilation=dilation)
+        self.d41 = nn.Conv1d(128, 64, kernel_size=3, padding=1)
+        self.d42 = nn.Conv1d(64, self.maxLengthSize, kernel_size=3, padding=1)
 
+        self.lastDenseInPathAdjustTCN1 = nn.Linear(self.featureSize, maxLengthSize)
+        self.lastDenseInPathAdjustTCN2 = nn.Linear(self.featureSize, maxLengthSize)
+        self.lastDenseInPathAdjustTCN3 = nn.Linear(self.featureSize, maxLengthSize)
+        self.lastDenseInPathAdjustUNET = nn.Linear(64, maxLengthSize)
+        self.lastDenseInPathUNET = nn.Linear(self.maxLengthSize, self.featureSize)
+        self.lastDenseInPathTCN1 = nn.Linear(self.maxLengthSize, self.featureSize)
+        self.lastDenseInPathTCN2 = nn.Linear(self.maxLengthSize, self.featureSize)
+        self.lastDenseInPathTCN3 = nn.Linear(self.maxLengthSize, self.featureSize)
 
     def forward(self,input):
         inputFixed = self.inputProcess(input)
@@ -670,4 +677,118 @@ class TCN(nn.Module):
         xd41 = self.activation17(self.d41(xu44))
         xd42 = self.activation18(self.d42(xd41))
 
-        return xd42
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.conv1d1(input)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.activation1_1(mergePath1)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.conv2d1(mergePath1)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.activation1_2(mergePath1)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.conv3d1(mergePath1)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath1 = self.activation1_3(mergePath1)
+
+        mergePath1 = self.conv4d1(mergePath1)
+        mergePath1 = self.activation1_4(mergePath1)
+
+        mergePath1 = self.conv5d1(mergePath1)
+        mergePath1 = self.activation1_5(mergePath1)
+
+        mergePath1 = self.conv6d1(mergePath1)
+        mergePath1 = self.activation1_6(mergePath1)
+
+        mergePath1 = self.conv7d1(mergePath1)
+        mergePath1 = self.activation1_7(mergePath1)
+
+        mergePath1 = self.conv8d1(mergePath1)
+        mergePath1 = self.activation1_8(mergePath1)
+
+
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.conv1d2(input)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.activation2_1(mergePath2)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.conv2d2(mergePath2)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.activation2_2(mergePath2)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.conv3d2(mergePath2)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath2 = self.activation2_3(mergePath2)
+
+        mergePath2 = self.conv4d1(mergePath2)
+        mergePath2 = self.activation2_4(mergePath2)
+
+        mergePath2 = self.conv5d1(mergePath2)
+        mergePath2 = self.activation2_5(mergePath2)
+
+        mergePath2 = self.conv6d1(mergePath2)
+        mergePath2 = self.activation2_6(mergePath2)
+
+        mergePath2 = self.conv7d1(mergePath2)
+        mergePath2 = self.activation2_7(mergePath2)
+
+        mergePath2 = self.conv8d1(mergePath2)
+        mergePath2 = self.activation2_8(mergePath2)
+
+
+
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.conv1d3(input)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.activation3_1(mergePath3)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.conv2d3(mergePath3)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.activation3_2(mergePath3)
+
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.conv3d3(mergePath3)
+        # mergePath = mergePath.permute(0, 2, 1)
+        mergePath3 = self.activation3_3(mergePath3)
+
+        mergePath3 = self.conv4d1(mergePath3)
+        mergePath3 = self.activation3_4(mergePath3)
+
+        mergePath3 = self.conv5d1(mergePath3)
+        mergePath3 = self.activation3_5(mergePath3)
+
+        mergePath3 = self.conv6d1(mergePath3)
+        mergePath3 = self.activation3_6(mergePath3)
+
+        mergePath3 = self.conv7d1(mergePath3)
+        mergePath3 = self.activation3_7(mergePath3)
+
+        mergePath3 = self.conv8d1(mergePath3)
+        mergePath3 = self.activation3_8(mergePath3)
+
+
+
+        mergePath1 = self.lastDenseInPathAdjustTCN1(mergePath1)
+        mergePath2 = self.lastDenseInPathAdjustTCN2(mergePath2)
+        mergePath3 = self.lastDenseInPathAdjustTCN3(mergePath3)
+        xd42 = self.lastDenseInPathAdjustUNET(xd42)
+
+        # mergePath1 = torch.reshape(mergePath1, (input.shape[0], self.maxLengthSize, -1))
+        # mergePath2 = torch.reshape(mergePath2, (input.shape[0], self.maxLengthSize, -1))
+        # mergePath3 = torch.reshape(mergePath3, (input.shape[0], self.maxLengthSize, -1))
+        # xd42 = torch.reshape(xd42, (input.shape[0], self.maxLengthSize, -1))
+
+        mergePath1 = self.lastDenseInPathTCN1(mergePath1)
+        mergePath2 = self.lastDenseInPathTCN2(mergePath2)
+        mergePath3 = self.lastDenseInPathTCN3(mergePath3)
+        xd42 = self.lastDenseInPathUNET(xd42)
+
+        mergePath3Total = torch.cat((mergePath1, mergePath2, mergePath3, xd42, input[:,self.lenOffest:,:]), 2)
+
+        return mergePath3Total

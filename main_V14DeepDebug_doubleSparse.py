@@ -27,7 +27,7 @@ print(torch.cuda.is_available())
 torch.autograd.set_detect_anomaly(True)
 # torch.autograd.profiler.profile(enabled=True)
 
-modelVersion="V19_Synth_len12_100_ADAM_LOSS_test5"
+modelVersion="V19_Synth_len12_100_ADAM_LOSS_sparse"
 isTrainModel=True
 continueTrain=True
 isChangeWeights=True
@@ -106,7 +106,7 @@ def visualize_extent(selectedOrNotSelected,numInstances, input, selectedOrNotSel
             plt.savefig(saveName + "_Results.png")
         plt.show()
 
-numTrajectories=999
+numTrajectories=10
 maxTrajectoryLength=12
 
 numCities = 1
@@ -121,9 +121,9 @@ serializedSelected2DMatrixs=[]
 
 # DEBUGGING WITH SINGLE TRAJECTORIES
 # seed 19
-[dataDebug, nGrid, serializedSelected2DMatrix, selectedOrNotSelected]=DataGeneratorFcn.generateSyntheticDataFixedLengthInputImageLeftToRight("testStreets2.png", numTrajectories=numTrajectories,
+[dataDebug, nGrid, serializedSelected2DMatrix, selectedOrNotSelected]=DataGeneratorFcn.generateSyntheticDataFixedLengthInputImageLeftToRightSparse("testStreets2.png", numTrajectories=numTrajectories,
                                                                 trajectoryLength=maxTrajectoryLength, numGrid=40,
-                                                                seed=19, visualize=True)
+                                                                seed=19, minSkip=1, maxSkip=6, visualize=True)
 selectedOrNotSelected=selectedOrNotSelected*scale
 data=np.zeros((1000,maxTrajectoryLength,2))
 row=0

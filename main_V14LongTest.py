@@ -27,7 +27,7 @@ print(torch.cuda.is_available())
 torch.autograd.set_detect_anomaly(True)
 # torch.autograd.profiler.profile(enabled=True)
 
-modelVersion="V19_Synth_len12_100_ADAM_LOSS_test5"
+modelVersion="V19_synth400_len40_100_ADAM_DS20_LOSS"
 isTrainModel=True
 continueTrain=True
 isChangeWeights=True
@@ -37,11 +37,11 @@ fixedOffset=0.999
 weightingStepSize=0.8
 beforeStepsFixed=0
 numOptIterates=0
-extraStepsFixed=60
-initialLR=0.00005
-totalBatchSize=800
+extraStepsFixed=80
+initialLR=0.0001
+totalBatchSize=600
 BATCH_SIZE=40
-repeatTimes=5
+repeatTimes=6
 cumulativeIters=batchCumulationCalc(totalBatchSize,BATCH_SIZE)
 scale=100
 timesteps=20
@@ -107,7 +107,7 @@ def visualize_extent(selectedOrNotSelected,numInstances, input, selectedOrNotSel
         plt.show()
 
 numTrajectories=999
-maxTrajectoryLength=12
+maxTrajectoryLength=40
 
 numCities = 1
 numCitiesTrain = 1
@@ -121,9 +121,9 @@ serializedSelected2DMatrixs=[]
 
 # DEBUGGING WITH SINGLE TRAJECTORIES
 # seed 19
-[dataDebug, nGrid, serializedSelected2DMatrix, selectedOrNotSelected]=DataGeneratorFcn.generateSyntheticDataFixedLengthInputImageLeftToRight("testStreets2.png", numTrajectories=numTrajectories,
-                                                                trajectoryLength=maxTrajectoryLength, numGrid=40,
-                                                                seed=19, visualize=True)
+[dataDebug, nGrid, serializedSelected2DMatrix, selectedOrNotSelected]=DataGeneratorFcn.generateSyntheticDataFixedLengthInputImageLeftToRight("testStreets400_2.png", numTrajectories=numTrajectories,
+                                                                trajectoryLength=maxTrajectoryLength, numGrid=400,
+                                                                seed=26, visualize=True)
 selectedOrNotSelected=selectedOrNotSelected*scale
 data=np.zeros((1000,maxTrajectoryLength,2))
 row=0
@@ -138,10 +138,10 @@ while row <1000:
 data=data*scale
 initLats=np.float32(dataDebug[:,0,0]*scale)
 initLons=np.float32(dataDebug[:,0,1]*scale)
-# print("!!!")
+print("!!!")
 
 
-# [data, nGrid, serializedSelected2DMatrix,selectedOrNotSelected] =DataGeneratorFcn.generateSyntheticDataFixedLengthInputImage("testStreets2.png",numTrajectories=numTrajectories,trajectoryLength=maxTrajectoryLength,numGrid=40, seed=123,visualize=True)
+# [data, nGrid, serializedSelected2DMatrix,selectedOrNotSelected] =DataGeneratorFcn.generateSyntheticDataFixedLengthInputImage("testStreets400_2.png",numTrajectories=numTrajectories,trajectoryLength=maxTrajectoryLength,numGrid=400, seed=2,visualize=True)
 #
 # selectedOrNotSelected=selectedOrNotSelected*scale
 # data=data*scale
@@ -195,18 +195,29 @@ initLons=np.float32(dataDebug[:,0,1]*scale)
 
 # data1=np.genfromtxt("datasets/tucson_mobilityJunctionSampleV3_4_4.csv",delimiter=",",dtype=np.float32, filling_values=np.nan)
 # data2=np.zeros(((int)(data1.shape[0]/2),data1.shape[1],2),dtype=np.float32)
+# debugReduction=20#DEBUG
+# debugLength=12#DEBUG
 # counter=0
 # for r in range(0,data1.shape[0],2):
 #     data2[counter, :, 0] = data1[r, :]
 #     data2[counter, :, 1] = data1[r+1, :]
 #     counter = counter + 1
+# data2=data2[5:5+debugReduction,:,:]#DEBUG
+# data2=data2[:,0:debugLength,:]#DEBUG
 # serializedSelected2DMatrix1=np.genfromtxt("datasets/tucson_allowableMatrix_4_4.csv",delimiter=",",dtype=np.float32, filling_values=np.nan)
 # serializedSelected2DMatrix=serializedSelected2DMatrix1
-# selectedOrNotSelected=np.genfromtxt("datasets/tucson_allowableNodesV2_4_4.csv",delimiter=",",dtype=np.float32, filling_values=np.nan)
-# selectedOrNotSelected=selectedOrNotSelected.transpose()*scale
-# data=data2*scale
-# nGrid=selectedOrNotSelected.shape[0]
+# serializedSelected2DMatrix = np.transpose(serializedSelected2DMatrix)
+# selectedOrNotSelectedRaw=np.genfromtxt("datasets/tucson_allowableNodesV2_4_4.csv",delimiter=",",dtype=np.float32, filling_values=np.nan)
+# selectedOrNotSelected2,data3=DataGeneratorFcn.normalizeCellTraj(selectedOrNotSelectedRaw.transpose(),data2)
+# # debugSize = (int)(data3.shape[0]/1)
+# visualize_extent(serializedSelected2DMatrix, debugReduction, data3[0:debugReduction,:,:], torch.from_numpy(selectedOrNotSelected2), saveName=None)
+# selectedOrNotSelected=selectedOrNotSelected2*scale
+# data=data3*scale
+# nGrid=selectedOrNotSelected2.shape[0]
 # maxTrajectoryLength=data.shape[1]
+# initLats=np.float32(data[:,0,0]*scale)
+# initLons=np.float32(data[:,0,1]*scale)
+
 
 
 
@@ -236,7 +247,7 @@ for c in range(numCities-1):
      #                                                                                 visualize=False)
 
     [data, nGrid, selectedOrNotSelected, serializedSelected2DMatrix, _]=DataGeneratorFcn.generateSyntheticDataVariableLengthLastRepeat(numTrajectories=numTrajectories,
-                                                                longestTrajectory=maxTrajectoryLength, numGrid=40,
+                                                                longestTrajectory=maxTrajectoryLength, numGrid=400,
                                                                 seed=seeds[c], visualize=True)
 
     if isRunOnCPU == False:
@@ -398,7 +409,7 @@ def train(X_trains, selectedOrNotSelecteds, serializedSelected2DMatrixs, BATCH_S
             adjustedScheduleValue=math.pow(offsetWeighting+((i-beforeStepsFixed) / numIterates)*maxWeightingStep,1.0)
         # print("adjustedScheduleValue:")
         # print(adjustedScheduleValue)
-        if optimResetCounter>((numIterates+1)*10000.8):
+        if optimResetCounter>((numIterates+1)*1000.8):
             usingLR=usingLR*0.8
             optimizer_input = optim.Adam(model.parameters(), lr=usingLR)
             scheduler1 = ExponentialLR(optimizer_input, gamma=0.997)
@@ -416,7 +427,7 @@ def train(X_trains, selectedOrNotSelecteds, serializedSelected2DMatrixs, BATCH_S
                  serializedSelected2DMatrix,_] = DataGeneratorFcn.generateSyntheticDataVariableLengthLastRepeat(
                     numTrajectories=numTrajectories,
                     longestTrajectory=maxTrajectoryLength,
-                    numGrid=40, seed=seedVal,
+                    numGrid=400, seed=seedVal,
                     visualize=False)
                 # randIndex = np.random.randint(len(X_trains))
                 X_train = data
@@ -563,10 +574,8 @@ def predict(serializedSelected, trajectoryLength,numTraj=10):
             ## rowVal=math.floor(i/(int)(timesteps/2))
             # cond1 = torch.unsqueeze(x[:, 0, 0], dim=1)
             # cond2 = torch.unsqueeze(x[:, 0, 1], dim=1)
-            t = i / timesteps
-            # tp = (t / (-10 * t + 11))
-            # x_ts = np.full((numTraj), tp)
-            x_ts = np.pow(np.full((numTraj), t), 4.0)
+            t = i/timesteps
+            x_ts = np.pow(np.full((numTraj), t),4.0)
             x_ts = torch.from_numpy(x_ts).to(torch.float32)
             x_ts = x_ts.unsqueeze(1)
             if isRunOnCPU == False:
@@ -582,7 +591,7 @@ def predict(serializedSelected, trajectoryLength,numTraj=10):
     plt.show()#MAIN
     return x
 
-numPredicts = 500
+numPredicts = 200
 for c in range(numCities):
     pred = predict(selectedOrNotSelecteds[c], maxTrajectoryLength,numTraj=numPredicts)
 
@@ -621,7 +630,8 @@ else:
 model.psl.B=serializedSelected2DMatrixT
 model.pslSum.B=serializedSelected2DMatrixT
 
-numPredicts = 500
+numPredicts = 200
+
 pred = predict(serializedSelected2DMatrixT, maxTrajectoryLength,numTraj=numPredicts)
 
 pred = pred.cpu().detach().numpy()

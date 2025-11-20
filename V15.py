@@ -126,7 +126,12 @@ class CustomLoss(nn.Module):
         # # return torch.mean(mae_loss) + torch.mean(torch.abs(penaltyTrue-penaltyPred))
         # # return torch.mean(mae_loss)
 
-        return torch.mean(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(torch.pow(2-time,2)))
+        # return torch.sum(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(torch.pow(time+0.00001,1.0)))
+        # return torch.sum(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze((1/(-4*time+4.1))-(1/(-5*time+6))))
+
+        # return torch.sum(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(torch.pow(time+0.00001,1.0)+(1/(-4*time+4.1))-(1/(-5*time+6))))
+
+        return torch.sum(torch.mean(mae_loss, dim=(1, 2)) * torch.squeeze(torch.pow(time + 0.001, 1.0)))
 
 # # Custom Activation Layer
 # class Activation(nn.Module):
@@ -231,7 +236,7 @@ class Multiply(nn.Module):
 class SimpleNN(nn.Module):
     def __init__(self, forbiddenSerialMap=None, lenForbidden=10, maxLengthSize = 10, temporalFeatureSize=2, convOffset=0):
         super(SimpleNN, self).__init__()
-        self.size = 40
+        self.size = 100
         self.maxLengthSize = maxLengthSize
         self.temporalFeatureSize = temporalFeatureSize
         # self.multPrePsl = Multiply()
@@ -245,7 +250,7 @@ class SimpleNN(nn.Module):
         pslSum = PairwiseSubtractionSumLayer(forbiddenSerialMap, lenForbidden, maxLengthSize)
         self.psl = psl
         self.pslSum = pslSum
-        self.pslDense = nn.Linear(1 + 2, self.maxLengthSize * 10)
+        self.pslDense = nn.Linear(1 + 2, self.maxLengthSize * 50)
         # self.trajCondConcat=
         self.trajInput = nn.Linear(temporalFeatureSize, self.size)
         # self.conditionInput = nn.Linear(2, 16)
@@ -270,7 +275,7 @@ class SimpleNN(nn.Module):
         # self.denseAfterCat4Forb = nn.Linear(8, self.size)
         self.denseAfterCat5 = nn.Linear(self.size * 5, self.size)
         self.lastAdd = Add3()
-        self.lastDense = nn.Linear(self.size + 10, 128)
+        self.lastDense = nn.Linear(self.size + 50, 128)
         self.lastDenseAlt = nn.Linear(128, 2)
         # self.convLast = nn.Conv1d(128, 2, 1)
 
@@ -291,7 +296,7 @@ class SimpleNN(nn.Module):
         # plsPath1 = self.multPrePsl(plsPathSum, time)
         mixedPlsPathCond = torch.cat((plsPathSum, condLat, condLon), 1)
         plsPathD = self.pslDense(mixedPlsPathCond)
-        plsPathDRS = torch.reshape(plsPathD, (-1, self.maxLengthSize, (int)(10)))
+        plsPathDRS = torch.reshape(plsPathD, (-1, self.maxLengthSize, (int)(50)))
 
         condLatLon = torch.cat((torch.unsqueeze(condLat, 1), torch.unsqueeze(condLon, 1)), dim=2)
         mixedTrajCond = torch.cat((condLatLon, traj), 1)
@@ -335,38 +340,54 @@ class SimpleNN(nn.Module):
 
 def generate_ts(timesteps, num, learningScheduleTime, isChangeWeights, isAdvancedWeighting=True):
     orig = np.random.randint(0, timesteps, size=num)
-    if isAdvancedWeighting==True:
-        actualLearningScheduleTime=learningScheduleTime
-    else:
-        actualLearningScheduleTime=0
-    if isChangeWeights==False:
-        actualLearningScheduleTime=1
-    noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.8)), size=(int)(num / (0.9 + actualLearningScheduleTime * 20.0)))
-    lastOnes = np.random.randint((int)(math.floor(timesteps * 0.1)), timesteps, size=(int)(num / (7.0-actualLearningScheduleTime*6.0)))
-    lastOnes2 = np.random.randint((int)(math.floor(timesteps*0.1)), timesteps, size=(int)(num / (6.8-actualLearningScheduleTime*6.0)))
-    lastOnes3 = np.random.randint((int)(math.floor(timesteps * 0.1)), timesteps, size=(int)(num / (6.7-actualLearningScheduleTime*6.0)))
+    # return orig
 
+    # if isAdvancedWeighting==True:
+    #     actualLearningScheduleTime=learningScheduleTime
+    # else:
+    #     actualLearningScheduleTime=0
+    # if isChangeWeights==False:
+    #     actualLearningScheduleTime=1
+    # numInternal = 100
+    # noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.8)),
+    #                               size=(int)(numInternal / (0.9 + actualLearningScheduleTime * 5.0)))
     # lastOnes = np.random.randint((int)(math.floor(timesteps * 0.4)), timesteps,
-    #                              size=(int)(num / (0.68)))
-    # lastOnes2 = np.random.randint((int)(math.floor(timesteps * 0.8)), timesteps,
-    #                               size=(int)(num / (0.5)))
-    # lastOnes3 = np.random.randint((int)(math.floor(timesteps * 0.94)), timesteps,
-    #                               size=(int)(num / (0.11)))
-
-    finalTs = np.concat((orig,noisyOnes,lastOnes,lastOnes2,lastOnes3))
-
-    # noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
-    #                               size=(int)(num / (1)))
-    # orig = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
-    #                               size=(int)(num / (1)))
-    # finalTs = np.concat((orig, noisyOnes))
-
-
-    finalTs = np.random.choice(finalTs,num)
-    return finalTs
+    #                              size=(int)(numInternal / (9.0 - actualLearningScheduleTime * 6.0)))
+    # lastOnes2 = np.random.randint((int)(math.floor(timesteps * 0.7)), timesteps,
+    #                               size=(int)(numInternal / (8.0 - actualLearningScheduleTime * 6.0)))
+    # lastOnes3 = np.random.randint((int)(math.floor(timesteps * 0.9)), timesteps,
+    #                               size=(int)(numInternal / (7.0 - actualLearningScheduleTime * 6.0)))
+    #
+    # # lastOnes = np.random.randint((int)(math.floor(timesteps * 0.4)), timesteps,
+    # #                              size=(int)(num / (0.68)))
+    # # lastOnes2 = np.random.randint((int)(math.floor(timesteps * 0.8)), timesteps,
+    # #                               size=(int)(num / (0.5)))
+    # # lastOnes3 = np.random.randint((int)(math.floor(timesteps * 0.94)), timesteps,
+    # #                               size=(int)(num / (0.11)))
+    #
+    # finalTs = np.concat((orig,noisyOnes,lastOnes,lastOnes2,lastOnes3))
+    #
+    # # noisyOnes = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
+    # #                               size=(int)(num / (1)))
+    # # orig = np.random.randint(0, (int)(math.floor(timesteps * 0.6)),
+    # #                               size=(int)(num / (1)))
+    # # finalTs = np.concat((orig, noisyOnes))
+    #
+    #
+    # finalTs = np.random.choice(finalTs,num)
+    # return finalTs
     # # return np.arange(0,timesteps,1,dtype=int)
     # # return np.random.randint(timesteps-1, timesteps, size=num)
     # # return np.random.randint(timesteps-3, timesteps, size=num)
+
+    lastOnes = np.random.randint((int)(math.floor(timesteps * 0.7)), timesteps,
+                                 size=(int)(num * 0.1))
+    lastOnes1 = np.random.randint((int)(math.floor(timesteps * 0.9)), timesteps,
+                                  size=(int)(num*0.2))
+
+    finalTs = np.concat((orig, lastOnes, lastOnes1))
+    finalTs2 = np.random.choice(finalTs, num)
+    return finalTs2
 
 def forward_noise_notNormalized(meanVals, varVals, timesteps, x, t, learningScheduleTime, isChangeWeights, isVizualize=True, isAdvancedWeighting=True):
     global oneTimeVisGenAB
@@ -391,11 +412,18 @@ def forward_noise_notNormalized(meanVals, varVals, timesteps, x, t, learningSche
     if isAdvancedWeighting == True:
         if isChangeWeights == False:
             learningScheduleTime = 1
-        img_a = x * (1 - np.pow(a, 2 + learningScheduleTime * 2.5)) + noise * np.pow(a, 2 + learningScheduleTime * 2.5)
-        img_b = x * (1 - np.pow(b, 2 + learningScheduleTime * 2.5)) + noise * np.pow(b, 2 + learningScheduleTime * 2.5)
+        img_a = x * (1 - np.pow(a, 2 + learningScheduleTime * 4.0)) + noise * np.pow(a, 2 + learningScheduleTime * 4.0)
+        img_b = x * (1 - np.pow(b, 2 + learningScheduleTime * 4.0)) + noise * np.pow(b, 2 + learningScheduleTime * 4.0)
     else:
-        img_a = x * (1 - np.pow(a, 3)) + noise * np.pow(a, 3)
-        img_b = x * (1 - np.pow(b, 3)) + noise * np.pow(b, 3)
+        # img_a = x * (1 - np.pow(a, 0.5)) + noise * np.pow(a, 0.5)
+        # img_b = x * (1 - np.pow(b, 0.5)) + noise * np.pow(b, 0.5)
+        img_a = x * (1 - np.pow(a, 5.0)) + noise * np.pow(a, 5.0)
+        img_b = x * (1 - np.pow(b, 5.0)) + noise * np.pow(b, 5.0)
+
+        # ap = (a / (-10 * a + 11))
+        # bp = (b / (-10 * b + 11))
+        # img_a = x * (1 - ap) + noise * ap
+        # img_b = x * (1 - bp) + noise * bp
 
 
     # img_a = x + noise * np.pow(a,2)
