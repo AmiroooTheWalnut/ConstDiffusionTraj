@@ -1,6 +1,9 @@
 import math
 
+from fontTools.unicodedata import block
 from sympy import false
+from sympy.physics.quantum.circuitplot import pyplot
+
 from TrajCell import TrajCell
 from Traj import SubTraj
 from PIL import Image
@@ -17,9 +20,11 @@ class TilesSynthetic:
         self.numCols = numCols
         self.width, self.height = img.size
         self.trajGrid = []
+        # self.trajGridReady = []
         self.origStreetPoints=[]
 
-    def makeSyntheticPaths(self,numPaths,numRows,numCols,marginPercentage,targetLength, scale, isVisualize=False):
+    def makeSyntheticPaths(self,numPaths,numRows,numCols,marginPercentage,targetLength, seed, isVisualize=False):
+        numpy.random.seed(seed)
         potentialPixels=[]
         for i in range(1,self.width):# FOR SOME REASON A-STAR FAILS WHEN TARGET OR START IS AT 0
             for j in range(1,self.height):# FOR SOME REASON A-STAR FAILS WHEN TARGET OR START IS AT 0
@@ -36,7 +41,7 @@ class TilesSynthetic:
                 endY = potentialPixels[endIndex][1]
                 if math.sqrt(math.pow(startX-endX,2)+math.pow(startY-endY,2))<10:
                     continue
-                path = self.shortestPathImage(startX, startY, endX, endY)
+                path = self.shortestPathImage(startX, startY, endX, endY, isVisualize=isVisualize)
                 allPaths.append(path)
                 break
         self.splitByGridAndMargin(allPaths, numRows, numCols, marginPercentage)
@@ -49,9 +54,10 @@ class TilesSynthetic:
         minY = numpy.min(self.origStreetPoints[:, 1])
         adjustedStreetPoints=self.addExtraStreetPoints(streetPoints)
         adjustedStreetPoints=numpy.array(adjustedStreetPoints,dtype=numpy.float32)
-        adjustedStreetPoints[:,0]=(adjustedStreetPoints[:, 0] - minX) / (maxX - minX)
+        adjustedStreetPoints[:,0] = (adjustedStreetPoints[:, 0] - minX) / (maxX - minX)
         adjustedStreetPoints[:, 1] = (adjustedStreetPoints[:, 1] - minY) / (maxY - minY)
-        adjustedStreetPoints=adjustedStreetPoints*scale
+        adjustedStreetPoints = adjustedStreetPoints.transpose()
+        # adjustedStreetPoints=adjustedStreetPoints.transpose()*scale
 
         allPathsAdjusted=[]
         cutLats = []
@@ -60,13 +66,52 @@ class TilesSynthetic:
             for c in range(len(self.trajGrid[r])):
                 for i in range(len(self.trajGrid[r][c])):
                     self.trajGrid[r][c][i].points=numpy.array(self.trajGrid[r][c][i].points,dtype=numpy.float32)
-                    self.trajGrid[r][c][i].points[:, 0] = (self.trajGrid[r][c][i].points[:, 0] - minX) / (maxX - minX)
-                    self.trajGrid[r][c][i].points[:, 1] = (self.trajGrid[r][c][i].points[:, 1] - minY) / (maxY - minY)
-                    self.trajGrid[r][c][i].points=self.trajGrid[r][c][i].points*scale
-                    self.trajGrid[r][c][i].streetPoints = numpy.array(self.trajGrid[r][c][i].streetPoints,dtype=numpy.float32)
-                    self.trajGrid[r][c][i].streetPoints[:, 0] = (self.trajGrid[r][c][i].streetPoints[:, 0] - minX) / (maxX - minX)
-                    self.trajGrid[r][c][i].streetPoints[:, 1] = (self.trajGrid[r][c][i].streetPoints[:, 1] - minY) / (maxY - minY)
-                    self.trajGrid[r][c][i].streetPoints = self.trajGrid[r][c][i].streetPoints * scale
+                    self.trajGrid[r][c][i].streetPoints = numpy.array(self.trajGrid[r][c][i].streetPoints,
+                                                                      dtype=numpy.float32)
+                    if maxX == minX:
+                        self.trajGrid[r][c][i].points[:, 0] = 0.5
+                        self.trajGrid[r][c][i].streetPoints[:, 0] = 0.5
+                    else:
+                        self.trajGrid[r][c][i].points[:, 0] = (self.trajGrid[r][c][i].points[:, 0] - minX) / (
+                                    maxX - minX)
+                        self.trajGrid[r][c][i].streetPoints[:, 0] = (self.trajGrid[r][c][i].streetPoints[:,
+                                                                     0] - minX) / (maxX - minX)
+                    if maxY == minY:
+                        self.trajGrid[r][c][i].points[:, 1] = 0.5
+                        self.trajGrid[r][c][i].streetPoints[:, 1] = 0.5
+                    else:
+                        self.trajGrid[r][c][i].points[:, 1] = (self.trajGrid[r][c][i].points[:, 1] - minY) / (
+                                    maxY - minY)
+                        self.trajGrid[r][c][i].streetPoints[:, 1] = (self.trajGrid[r][c][i].streetPoints[:,
+                                                                     1] - minY) / (maxY - minY)
+
+                    # self.trajGrid[r][c][i].points=self.trajGrid[r][c][i].points*scale
+
+
+                    # self.trajGrid[r][c][i].streetPoints = self.trajGrid[r][c][i].streetPoints.transpose() * scale
+                    self.trajGrid[r][c][i].streetPoints = self.trajGrid[r][c][i].streetPoints.transpose()
+                    # self.trajGrid[r][c][i].initLat=(self.trajGrid[r][c][i].initLat - minX) / (maxX - minX)
+                    # self.trajGrid[r][c][i].initLon=(self.trajGrid[r][c][i].initLon - minY) / (maxY - minY)
+                    if self.trajGrid[r][c][i].cutLat==-1:
+                        if maxX == minX:
+                            self.trajGrid[r][c][i].cutLat = 0.5
+                        else:
+                            self.trajGrid[r][c][i].cutLat = (self.trajGrid[r][c][i].initLat - minX) / (maxX - minX)
+                        if maxY == minY:
+                            self.trajGrid[r][c][i].cutLon = 0.5
+                        else:
+                            self.trajGrid[r][c][i].cutLon = (self.trajGrid[r][c][i].initLon - minY) / (maxY - minY)
+
+                    else:
+                        if maxX == minX:
+                            self.trajGrid[r][c][i].cutLat = 0.5
+                        else:
+                            self.trajGrid[r][c][i].cutLat = (self.trajGrid[r][c][i].cutLat - minX) / (maxX - minX)
+                        if maxY == minY:
+                            self.trajGrid[r][c][i].cutLon = 0.5
+                        else:
+                            self.trajGrid[r][c][i].cutLon = (self.trajGrid[r][c][i].cutLon - minY) / (maxY - minY)
+
                     cutLats.append(self.trajGrid[r][c][i].cutLat)
                     cutLons.append(self.trajGrid[r][c][i].cutLon)
                     allPathsAdjusted.append(self.trajGrid[r][c][i].points)
@@ -250,6 +295,13 @@ class TilesSynthetic:
             for c in range(numCols):
                 row.append([])
             trajGrid.append(row)
+        # trajGridReady = []
+        # for r in range(numRows):
+        #     row = []
+        #     for c in range(numCols):
+        #         row.append([])
+        #     trajGridReady.append(row)
+
         # totalWidth = numpy.max(trajs[:,:,0])+numpy.min(trajs[:,:,0])
         # totalHeight = numpy.max(trajs[:,:,1])+numpy.min(trajs[:,:,1])
         totalWidth=self.width
@@ -296,7 +348,7 @@ class TilesSynthetic:
                                 newTrajCut.append([trajs[i][t, 0], trajs[i][t, 1]])
                         else:
                             if hasStarted==True:
-                                subTrajs.append(SubTraj(trajs[i][0,0],trajs[i][0,1],cutLat,cutLon,newTrajCut,isFromInit))
+                                subTrajs.append(SubTraj(trajs[i][0,0],trajs[i][0,1],cutLat,cutLon,newTrajCut,isFromInit,1))
                                 newTrajCut = []
                                 # initialX = -1
                                 # initialY = -1
@@ -305,7 +357,7 @@ class TilesSynthetic:
                                 hasStarted=False
                                 hasFinished=True
                     if hasFinished==False:
-                        subTrajs.append(SubTraj(trajs[i][0, 0], trajs[i][0, 1], cutLat, cutLon, newTrajCut, isFromInit))
+                        subTrajs.append(SubTraj(trajs[i][0, 0], trajs[i][0, 1], cutLat, cutLon, newTrajCut, isFromInit, 0))
                 trajGrid[r][c]=subTrajs
         self.trajGrid=trajGrid
 
@@ -313,12 +365,30 @@ class TilesSynthetic:
     def dist(self,x,y,xp,yp):
         return math.sqrt(math.pow(x-xp,2)+math.pow(y-yp,2))
 
-    def upDownSample(self,targetLength):
+    def upDownSample(self,targetLength, isVizualize=False):
         for r in range(len(self.trajGrid)):
             for c in range(len(self.trajGrid[r])):
-                for i in range(len(self.trajGrid[r][c])):
+                for i in reversed(range(len(self.trajGrid[r][c]))):
+                    # if r==0 and c==0:
+                    # #     d=numpy.array(self.trajGrid[r][c][i].points)
+                    # #     plt.scatter(d[:, 0], d[:, 1])
+                    # #     plt.plot(d[:, 0], d[:, 1])
+                    # #     plt.show()
+                    #     print("DEBUG!!!!")
+                    #     if len(self.trajGrid[r][c][i].points) < 45 or len(self.trajGrid[r][c][i].points) > 80:
+                    #         del self.trajGrid[r][c][i]
+                    #         continue
+                    if len(self.trajGrid[r][c][i].points)<3:
+                        del self.trajGrid[r][c][i]
+                        continue
                     if len(self.trajGrid[r][c][i].points) < targetLength:
                         for m in range(1000000):
+                            # if r == 3 and c == 2:
+                            #     d = numpy.array(self.trajGrid[r][c][i].points)
+                            #     plt.scatter(d[:, 0], d[:, 1])
+                            #     plt.plot(d[:, 0], d[:, 1])
+                            #     plt.show()
+                            #     print("DEBUG!!!!")
                             potentialPoints = []
                             potentialPointsDists = []
                             for t in range(1, len(self.trajGrid[r][c][i].points)):
@@ -333,22 +403,37 @@ class TilesSynthetic:
                                 if potentialPointsDists[m] > maxDist:
                                     maxDist = potentialPointsDists[m]
                                     maxDistIndex = m
-                            midPointX = (self.trajGrid[r][c][i].points[maxDistIndex][0] +
-                                         self.trajGrid[r][c][i].points[maxDistIndex + 1][0]) / 2
-                            midPointY = (self.trajGrid[r][c][i].points[maxDistIndex][1] +
-                                         self.trajGrid[r][c][i].points[maxDistIndex + 1][1]) / 2
-                            cutLeft = self.trajGrid[r][c][i].points[0:maxDistIndex+1]
-                            cutRight = self.trajGrid[r][c][i].points[maxDistIndex+1:len(self.trajGrid[r][c][i].points)]
+                            if len(self.trajGrid[r][c][i].points)<3:
+                                midPointX = (self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex] - 1][0] +
+                                             self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex]][0]) / 2
+                                midPointY = (self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex] - 1][1] +
+                                             self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex]][1]) / 2
+                            else:
+                                midPointX = (self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex]-1][0] +
+                                             self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex] + 0][0]) / 2
+                                midPointY = (self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex]-1][1] +
+                                             self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex] + 0][1]) / 2
+
+                            cutLeft = self.trajGrid[r][c][i].points[0:potentialPoints[maxDistIndex]]
+                            cutRight = self.trajGrid[r][c][i].points[potentialPoints[maxDistIndex]:len(self.trajGrid[r][c][i].points)]
                             newPoints = cutLeft + [[midPointX, midPointY]] + cutRight
                             self.trajGrid[r][c][i].points = newPoints
                             if len(self.trajGrid[r][c][i].points)==targetLength:
                                 break
 
                     elif len(self.trajGrid[r][c][i].points) > targetLength:
-                        potentialPoints = []
-                        potentialPointsDists = []
+                        if isVizualize==True:
+                            plt.plot(numpy.array(self.trajGrid[r][c][i].points)[:,0],
+                                 numpy.array(self.trajGrid[r][c][i].points)[:,1])
+                            plt.scatter(numpy.array(self.trajGrid[r][c][i].points)[:,0],
+                                 numpy.array(self.trajGrid[r][c][i].points)[:,1])
+                            plt.show()
                         offset = 0
                         for tryIndex in range(1000000):
+                            potentialPoints = []
+                            potentialPointsDists = []
+                            # if tryIndex==4:
+                            #     print("!")
                             for t in range(1, len(self.trajGrid[r][c][i].points) - 1):
                                 dXL = self.trajGrid[r][c][i].points[t - 1][0] - self.trajGrid[r][c][i].points[t][0]
                                 dXR = self.trajGrid[r][c][i].points[t][0] - self.trajGrid[r][c][i].points[t + 1][0]
@@ -364,10 +449,14 @@ class TilesSynthetic:
                                         self.trajGrid[r][c][i].points[t - 1][1] - self.trajGrid[r][c][i].points[t + 1][1],2))
                                     potentialPointsDists.append(dist)
                             if len(potentialPoints) == 0:
-                                print('FAILED TO REMOVE POINT!!!')
-                                print('INCREASEING OFFSET!')
+                                # print('FAILED TO REMOVE POINT!!!')
+                                # print('INCREASEING OFFSET!')
                                 offset = offset + 1
-                                if offset > 10:
+                                if offset > 50:
+                                    # plt.plot(self.trajGrid[r][c].streetPoints[0,:],self.trajGrid[r][c].streetPoints[1,:])
+                                    points=numpy.array(self.trajGrid[r][c][i].points)
+                                    plt.plot(points[:,0],points[:,1])
+                                    plt.show()
                                     print("TOO LARGE ANGLE!!! ERROR THROWN")
                                     raise ValueError("CODE STOPPED FOR HAVING TOO LARGE ANGLE")
                                 continue
@@ -377,9 +466,22 @@ class TilesSynthetic:
                                 if potentialPointsDists[m] < minDist:
                                     minDist = potentialPointsDists[m]
                                     minDistIndex = m
-                            del self.trajGrid[r][c][i].points[minDistIndex]
+                            del self.trajGrid[r][c][i].points[potentialPoints[minDistIndex]]
+                            # plt.plot(numpy.array(self.trajGrid[r][c][i].points)[:,0],
+                            #      numpy.array(self.trajGrid[r][c][i].points)[:,1])
+                            # plt.scatter(numpy.array(self.trajGrid[r][c][i].points)[:,0],
+                            #      numpy.array(self.trajGrid[r][c][i].points)[:,1])
+                            # plt.title(str(len(self.trajGrid[r][c][i].points)))
+                            # plt.show()
                             if len(self.trajGrid[r][c][i].points) == targetLength:
                                 break
+                        if isVizualize == True:
+                            plt.plot(numpy.array(self.trajGrid[r][c][i].points)[:, 0],
+                                 numpy.array(self.trajGrid[r][c][i].points)[:, 1])
+                            plt.scatter(numpy.array(self.trajGrid[r][c][i].points)[:, 0],
+                                    numpy.array(self.trajGrid[r][c][i].points)[:, 1])
+                            plt.title(str(len(self.trajGrid[r][c][i].points)))
+                            plt.show()
 
                         # print("!!!")
 
@@ -421,10 +523,110 @@ class TilesSynthetic:
         for r in range(len(self.trajGrid)):
             for c in range(len(self.trajGrid[r])):
                 for i in range(len(self.trajGrid[r][c])):
+                    # plt.scatter(self.trajGrid[r][c][i].streetPoints[0, :],
+                    #             self.trajGrid[r][c][i].streetPoints[1, :], s=40, c=[[0, 0, 1]])
+                    # # for i in range(self.points.shape[0]):
+                    # plt.plot(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1])
+                    # plt.scatter(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1], s=20,
+                    #             c=[[1, 1, 0]])
+                    # # plt.scatter(self.trajGrid[r][c][i].initLat,
+                    # #             self.trajGrid[r][c][i].initLon, s=100, c=[[0, 1, 0]])
+                    # # if self.trajGrid[r][c][i].cutLat==-1:
+                    # plt.scatter(self.trajGrid[r][c][i].cutLat,
+                    #             self.trajGrid[r][c][i].cutLon, s=150, c=[[1, 0, 0]])
+                    # plt.show()
+
                     self.trajGrid[r][c][i].points=self.trajGrid[r][c][i].points*value
                     self.trajGrid[r][c][i].streetPoints = self.trajGrid[r][c][i].streetPoints * value
-                    self.trajGrid[r][c][i].initLat = self.trajGrid[r][c][i].initLat * value
-                    self.trajGrid[r][c][i].initLon = self.trajGrid[r][c][i].initLon * value
+                    # self.trajGrid[r][c][i].initLat = self.trajGrid[r][c][i].initLat * value
+                    # self.trajGrid[r][c][i].initLon = self.trajGrid[r][c][i].initLon * value
                     self.trajGrid[r][c][i].cutLat = self.trajGrid[r][c][i].cutLat * value
                     self.trajGrid[r][c][i].cutLon = self.trajGrid[r][c][i].cutLon * value
-                    print("!!!")
+
+                    # print(f"r: {r} c: {c} i: {i}")
+                    # plt.scatter(self.trajGrid[r][c][i].streetPoints[0, :],
+                    #             self.trajGrid[r][c][i].streetPoints[1, :], s=40, c=[[0,0,1]])
+                    # # for i in range(self.points.shape[0]):
+                    # plt.plot(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1])
+                    # plt.scatter(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1], s=20, c=[[1,1,0]])
+                    # # plt.scatter(self.trajGrid[r][c][i].initLat,
+                    # #             self.trajGrid[r][c][i].initLon, s=100, c=[[0,1,0]])
+                    # # if self.trajGrid[r][c][i].cutLat==-1:
+                    # plt.scatter(self.trajGrid[r][c][i].cutLat,
+                    #             self.trajGrid[r][c][i].cutLon, s=150, c=[[1,0,0]])
+                    # plt.show()
+                    #
+                    # print("!!!")
+
+    def normalize(self):
+        for r in range(len(self.trajGrid)):
+            for c in range(len(self.trajGrid[r])):
+                for i in range(len(self.trajGrid[r][c])):
+                    maxX = numpy.max(self.trajGrid[r][c][i].streetPoints[0, :])
+                    minX = numpy.min(self.trajGrid[r][c][i].streetPoints[0, :])
+                    maxY = numpy.max(self.trajGrid[r][c][i].streetPoints[1, :])
+                    minY = numpy.min(self.trajGrid[r][c][i].streetPoints[1, :])
+                    # plt.scatter(self.trajGrid[r][c][i].streetPoints[0, :],
+                    #             self.trajGrid[r][c][i].streetPoints[1, :])
+                    # plt.plot(self.trajGrid[r][c][i].points[:,0], self.trajGrid[r][c][i].points[:,1])
+                    # plt.show()
+                    # (adjustedStreetPoints[:, 0] - minX) / (maxX - minX)
+                    if maxX == minX:
+                        self.trajGrid[r][c][i].points[:, 0] = 0.5 + 1
+                        self.trajGrid[r][c][i].streetPoints[0, :] = 0.5 + 1
+                        self.trajGrid[r][c][i].cutLat = 0.5 + 1
+                    else:
+                        self.trajGrid[r][c][i].points[:, 0] = ((self.trajGrid[r][c][i].points[:, 0] - minX) / (
+                                    maxX - minX)) + 1
+                        self.trajGrid[r][c][i].streetPoints[0, :] = ((self.trajGrid[r][c][i].streetPoints[0,
+                                                                     :] - minX) / (maxX - minX)) + 1
+                        self.trajGrid[r][c][i].cutLat = ((self.trajGrid[r][c][i].cutLat - minX) / (maxX - minX)) + 1
+                    if maxY == minY:
+                        self.trajGrid[r][c][i].points[:, 1] = 0.5 + 1
+                        self.trajGrid[r][c][i].streetPoints[1, :] = 0.5 + 1
+                        self.trajGrid[r][c][i].cutLon = 0.5 + 1
+                    else:
+                        self.trajGrid[r][c][i].points[:, 1] = ((self.trajGrid[r][c][i].points[:, 1] - minY) / (
+                                    maxY - minY)) + 1
+                        self.trajGrid[r][c][i].streetPoints[1, :] = ((self.trajGrid[r][c][i].streetPoints[1,
+                                                                     :] - minY) / (maxY - minY)) + 1
+                        self.trajGrid[r][c][i].cutLon = ((self.trajGrid[r][c][i].cutLon - minY) / (maxY - minY)) + 1
+
+
+                    # self.trajGrid[r][c][i].initLat = (self.trajGrid[r][c][i].initLat - minX) / (maxX - minX)
+                    # self.trajGrid[r][c][i].initLon = (self.trajGrid[r][c][i].initLon - minY) / (maxY - minY)
+                    # if self.trajGrid[r][c][i].cutLat == -1:
+
+                    # print(f"r: {r} c: {c} i: {i}")
+                    # plt.scatter(self.trajGrid[r][c][i].streetPoints[0, :],
+                    #             self.trajGrid[r][c][i].streetPoints[1, :], s=40, c=[[0,0,1]])
+                    # # for i in range(self.points.shape[0]):
+                    # plt.plot(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1])
+                    # plt.scatter(self.trajGrid[r][c][i].points[:, 0], self.trajGrid[r][c][i].points[:, 1], s=20, c=[[1,1,0]])
+                    # plt.scatter(self.trajGrid[r][c][i].initLat,
+                    #             self.trajGrid[r][c][i].initLon, s=100, c=[[0,1,0]])
+                    # # if self.trajGrid[r][c][i].cutLat==-1:
+                    # plt.scatter(self.trajGrid[r][c][i].cutLat,
+                    #             self.trajGrid[r][c][i].cutLon, s=150, c=[[1,0,0]])
+                    # plt.show()
+                    #
+                    # print("!!!")
+
+
+    @staticmethod
+    def gen2DMapFromStreetPoints(points, nGrid):
+        gridData = numpy.zeros((nGrid, nGrid))
+        for i in range(points.shape[0]):
+            for j in range(points.shape[1]):
+                gridX = numpy.floor(points[i, j, 0] * nGrid)
+                gridY = numpy.floor(points[i, j, 1] * nGrid)
+                if gridX > nGrid - 1:
+                    gridX = nGrid - 1
+                if gridX < 0:
+                    gridX = 0
+                if gridY > nGrid - 1:
+                    gridY = nGrid - 1
+                if gridY < 0:
+                    gridY = 0
+                gridData[int(gridX), int(gridY)] = gridData[int(gridX), int(gridY)] + 1
+        return gridData
